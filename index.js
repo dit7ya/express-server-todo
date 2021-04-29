@@ -4,8 +4,6 @@ const cors = require("cors");
 const bcrypt = require("bcrypt");
 const morgan = require('morgan')
 
-require("dotenv").config();
-
 const {
     loginUser,
     createTodo,
@@ -16,16 +14,17 @@ const {
     validateToken
 } = require("./helpers.js");
 
-const MONGODB_URI = process.env.MONGODB_URI
 
-const main = async () => {
+// TODO probably should take PORT as well so that we can use a different port for test server
+const main = async (mongo_uri, port) => {
+    // console.log({ mongo_uri, port })
     const app = express();
     app.use(cors());
 
     app.use(morgan('dev'))
     app.use(express.json());
 
-    const client = new MongoClient(MONGODB_URI, {
+    const client = new MongoClient(mongo_uri, {
         useNewUrlParser: true,
         useUnifiedTopology: true,
     });
@@ -140,10 +139,10 @@ const main = async () => {
         }
     });
 
-    const PORT = 3001;
-    app.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
+    app.listen(port, () => {
+        console.log(`Server running on port ${port}`);
     });
 };
 
-main()
+
+module.exports = { main }

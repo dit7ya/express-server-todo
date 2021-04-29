@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon index.js"
+    "start": "nodemon start.js",
+    "start-test": "node start-server-for-tests.js"
   },
   "author": "",
   "license": "ISC",
@@ -16,5 +17,8 @@
     "jsonwebtoken": "^8.5.1",
     "mongodb": "^3.6.6",
     "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "axios": "^0.21.1"
   }
 }

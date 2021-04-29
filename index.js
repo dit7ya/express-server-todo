@@ -2,135 +2,98 @@ const express = require("express");
 const { MongoClient } = require("mongodb");
 const cors = require("cors");
 const bcrypt = require("bcrypt");
-const jwt = require("jsonwebtoken");
+const morgan = require('morgan')
+
 require("dotenv").config();
-const { validateToken } = require("./utils.js");
 
-const app = express();
-app.use(cors());
-app.use(express.json()); // for parsing application/json
-// app.use(validateToken)
+const {
+    loginUser,
+    createTodo,
+    deleteTodo,
+    createUser,
+    getAllTodos,
+    updateTodo,
+    validateToken
+} = require("./helpers.js");
 
-const PASSWORD = process.env.MONGODB_ATLAS_HALUM_PASSWORD;
-const MONGODB_URI = `mongodb+srv://halum:${PASSWORD}@cluster0.qz9n6.mongodb.net/todoDatabase?retryWrites=true&w=majority`;
-
-async function loginUser(client, userData) {
-    // console.log(userData)
-    const user = await client
-        .db("todoDatabase")
-        .collection("users")
-        .findOne({ username: userData.username });
-
-    // console.log(userData);
-
-    const passwordCorrect =
-        user === null
-            ? false
-            : await bcrypt.compare(userData.password, user.passwordHash);
-
-    if (!(user && passwordCorrect)) {
-        return Promise.reject("username or password incorrect");
-    }
-
-    const userForToken = {
-        username: user.username,
-        id: user._id,
-    };
-    const options = { expiresIn: "2d", issuer: "halum-todo-app" };
-    const token = jwt.sign(userForToken, process.env.SECRET, options);
-    return Promise.resolve(token);
-}
-
-async function createUser(client, user) {
-    const userExists = await client
-        .db("todoDatabase")
-        .collection("users")
-        .findOne({ username: user.username });
-    if (userExists) {
-        return Promise.reject("Username is already taken.");
-    } else {
-        const result = await client
-            .db("todoDatabase")
-            .collection("users")
-            .insertOne(user);
-        return Promise.resolve(
-            `New user created with the following id: ${result.insertedId}`
-        );
-    }
-}
-
-async function createTodo(client, todo) {
-    const result = await client
-        .db("todoDatabase")
-        .collection("todos")
-        .insertOne(todo);
-    console.log(`New todo created with the following id: ${result.insertedId}`);
-}
-
-const getAllTodos = async (client, userId) => {
-    const result = await client
-        .db("todoDatabase")
-        .collection("todos")
-        .find({ userId: userId })
-        .toArray();
-    return result;
-};
-
-const deleteTodo = async (client, filter) => {
-    console.log("Filer is ", filter);
-    const result = await client
-        .db("todoDatabase")
-        .collection("todos")
-        .deleteOne(filter);
-
-    console.log(`Todo deleted`);
-};
-
-const updateTodo = async (client, todo) => {
-    const result = await client
-        .db("todoDatabase")
-        .collection("todos")
-        .replaceOne({ _id: todo._id }, todo);
-
-    console.log(`Todo updated`);
-};
+const MONGODB_URI = process.env.MONGODB_URI
 
 const main = async () => {
+    const app = express();
+    app.use(cors());
+
+    app.use(morgan('dev'))
+    app.use(express.json());
+
     const client = new MongoClient(MONGODB_URI, {
         useNewUrlParser: true,
         useUnifiedTopology: true,
     });
     await client.connect();
-    app.get("/", (request, response) => {
-        response.send("<h1>Welcome to the todo API!</h1>");
+
+    app.get("/api", (req, res) => {
+        res.send("<h1>Welcome to the todos API!</h1>"); // TODO FIXME
     });
 
-    app.get("/api/todos", validateToken, (request, response) => {
-
-        const userId = request.decoded.id
-        // console.log(request.decoded);
-        getAllTodos(client, userId).then((x) => response.send(x));
+    // Get all todos for the logged in user
+    app.get("/api/todos", validateToken, async (req, res) => {
+        const userId = req.decoded.id;
+        const allTodos = await getAllTodos(client, userId);
+        const result = {
+            success: true,
+            message: `Retrieved all todos for user ${userId}`,
+            data: { allTodos: allTodos },
+        };
+        // send the result as JSON
+        res.json(result);
     });
-    app.post("/api/newTodo", validateToken, (req, res) => {
-        // console.log(req);
-        const userId = req.decoded.id
-        const todoWithUserId = { ...req.body, userId }
-        // console.log(consol)
-        createTodo(client, todoWithUserId).then(res.send("Todo created"));
+    // Create new todo with post request
+    app.post("/api/todos", validateToken, async (req, res) => {
+        try {
+            const userId = req.decoded.id;
+            const todoWithUserId = { ...req.body, userId };
+            const insertedId = await createTodo(client, todoWithUserId);
+            const result = {
+                success: true,
+                message: `New todo created with the following id: ${insertedId}`,
+            };
+            res.status(201).json(result);
+        } catch (err) {
+
+            const result = {
+                success: false,
+                message: err
+            };
+            res.status(401).json(result);
+        }
     });
 
-    app.post("/api/updateTodo", (req, res) => {
-        // console.log(req.body);
-        updateTodo(client, req.body).then(res.send("Todo updated"));
+    app.delete("/api/todos/:id", validateToken, async (req, res) => {
+        const todoId = req.params.id;
+        await deleteTodo(client, todoId);
+        const result = {
+            success: true,
+            message: `Todo deleted with the following id: ${todoId}`,
+        };
+        res.status(200).json(result);
     });
 
-    app.post("/api/deleteTodo", (req, res) => {
-        // console.log("THE API RECEIVES req.body", req.body);
-        deleteTodo(client, req.body).then(res.send("todo deleted"));
+
+    // Update a todo with a patch request
+    app.patch("/api/todos/", validateToken, async (req, res) => {
+        const userId = req.decoded.id;
+        const todoWithUserId = { ...req.body, userId };
+        await updateTodo(client, todoWithUserId);
+        const result = {
+            success: true,
+            message: `Todo updated with the following id: ${req.body._id}`,
+        };
+        res.json(result);
     });
 
-    app.post("/api/users", async (request, response) => {
-        const body = request.body;
+    // register a new user
+    app.post("/api/users", async (req, res) => {
+        const body = req.body;
 
         const saltRounds = 10;
         const passwordHash = await bcrypt.hash(body.password, saltRounds);
@@ -140,20 +103,40 @@ const main = async () => {
             passwordHash,
         };
         try {
-            const result = await createUser(client, user);
-            response.send(result);
-        } catch {
-            response.status(401).send("Username taken."); // FIXME figure out the correct status code
+            const userId = await createUser(client, user);
+            const result = {
+                success: true,
+                message: `User created with userId: ${userId}`
+            }
+            res.status(201).json(result);
+        } catch (err) {
+            const result = {
+                success: false,
+                message: err
+            }
+            res.status(401).json(result);
         }
     });
 
-    app.post("/api/login", async (request, response) => {
-        const user = request.body;
+    // login a registered user
+    app.post("/api/login", async (req, res) => {
+        const userData = req.body;
         try {
-            const token = await loginUser(client, user);
-            response.send(token);
-        } catch {
-            response.status(401).send("Username or password incorrect.");// FIXME figure out the correct status code
+            const token = await loginUser(client, userData);
+            // res.send(token);
+            const result = {
+                success: true,
+                message: "Logged in successfully.",
+                data: { token: token }
+            }
+            res.json(result)
+        } catch (err) {
+
+            const result = {
+                success: false,
+                message: "Login unsuccessfull.",
+            }
+            res.status(401).json(result)
         }
     });
 
@@ -163,4 +146,4 @@ const main = async () => {
     });
 };
 
-main().then(console.log);
+main()

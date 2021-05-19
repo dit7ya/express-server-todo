@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken')
 
 const loginUser = async (client, userData) => {
     const user = await client
-        .db("todoDatabase")
+        .db("todoDatabase") // FIXME remove hardcoding database name
         .collection("users")
         .findOne({ username: userData.username });
 

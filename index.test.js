@@ -15,9 +15,7 @@ describe("registration API works", () => {
             useUnifiedTopology: true,
         });
         await client.connect();
-        // await console.log(client.db().databaseName)
         await client.db().dropDatabase()
-        // await client.db().dropDatabase()
         await client.close()
         done()
     });
